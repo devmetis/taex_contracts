@@ -1,0 +1,23 @@
+{
+  "name": "salenft",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "npx hardhat test",
+    "compile": "npx hardhat compile",
+    "deploy-mainnet": "npx hardhat ignition deploy ./ignition/modules/TaexNFT.js --network mainnetETH",
+    "verify-mainnet": "npx hardhat ignition deploy ./ignition/modules/TaexNFT.js --network mainnetETH --verify",
+    "reset-mainnet-deployment": "npx hardhat ignition deploy ./ignition/modules/TaexNFT.js --network mainnetETH --reset",
+    "deploy-sepolia": "npx hardhat ignition deploy ./ignition/modules/TaexNFT.js --network sepolia",
+    "verify-sepolia": "npx hardhat ignition deploy ./ignition/modules/TaexNFT.js --network sepolia --verify",
+    "reset-sepolia-deployment": "npx hardhat ignition deploy ./ignition/modules/TaexNFT.js --network sepolia --reset"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "hardhat": "^2.22.3"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.0.2",
+    "dotenv": "^16.4.5"
+  }
+}
