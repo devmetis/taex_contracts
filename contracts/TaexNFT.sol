@@ -29,9 +29,9 @@ contract TaexNFT is ERC721, Ownable, ReentrancyGuard {
         _;
     }
 
-    event TokenListedForSale(uint256 tokenId, uint256 price);
-    event TokenUnListedForSale(uint256 tokenId);
-    event TokenPriceAdjusted(uint256 tokenId, uint256 price);
+    event TokenListedForSale(uint256 indexed tokenId, uint256 price);
+    event TokenUnListedForSale(uint256 indexed tokenId);
+    event TokenPriceAdjusted(uint256 indexed tokenId, uint256 price);
     event TokenMinted(address indexed to, uint256 tokenId);
 
     constructor(

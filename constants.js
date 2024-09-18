@@ -4,7 +4,7 @@ module.exports = {
     mainnet: 1000, // it refers 10% because of 2 decimals
   },
   saleNFT: {
-    testnet: "0x2B3774dd95b5DAd93905CC75Eb0B4426A8437B5F",
+    testnet: "0x69766ab9364dAAbC977125C6e8F5cf12bc89E6d5",
     mainnet: "",
   },
 };
