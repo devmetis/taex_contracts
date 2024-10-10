@@ -15,10 +15,17 @@ contract TaexNFT1155 is ERC1155, Ownable, ReentrancyGuard {
     mapping(uint256 => address) private _owners;
 
     string public internalBaseURI;
-    address public minter;
-    uint256 public primaryPrice;
     mapping(uint256 => bool) public isListedForSale;
     mapping(uint256 => uint256) public tokenPrice;
+    uint256 public primaryPrice;
+
+    uint256 public primaryArtistFee;
+    uint256 public secondaryArtistFee;
+    uint256 public secondaryTaexFee;
+
+    mapping(uint256 => uint256) public tokenPrimaryArtistFee;
+    mapping(uint256 => uint256) public tokenSecondaryArtistFee;
+    mapping(uint256 => uint256) public tokenSecondaryTaexFee;
 
     modifier isNotZeroAddress(address _address) {
         require(_address != address(0), "TaexNFT1155: zero address");
@@ -30,11 +37,6 @@ contract TaexNFT1155 is ERC1155, Ownable, ReentrancyGuard {
         _;
     }
 
-    modifier onlyMinter() {
-        require(isMinter(msg.sender), "TaexNFT1155: not minter");
-        _;
-    }
-
     event TokenListedForSale(uint256 indexed tokenId, uint256 price);
     event TokenUnListedForSale(uint256 indexed tokenId);
     event TokenPriceAdjusted(uint256 indexed tokenId, uint256 price);
@@ -43,11 +45,15 @@ contract TaexNFT1155 is ERC1155, Ownable, ReentrancyGuard {
     constructor(
         string memory _uri,
         uint256 _primaryPrice,
-        address _minter
+        uint256 _primaryArtistFee,
+        uint256 _secondaryArtistFee,
+        uint256 _secondaryTaexFee
     ) isNotZero(_primaryPrice) ERC1155(_uri) Ownable(msg.sender) {
         internalBaseURI = _uri;
         primaryPrice = _primaryPrice;
-        minter = _minter;
+        primaryArtistFee = _primaryArtistFee;
+        secondaryArtistFee = _secondaryArtistFee;
+        secondaryTaexFee = _secondaryTaexFee;
     }
 
     function ownerOfToken(uint256 _tokenId) external view returns (address) {
@@ -56,30 +62,6 @@ contract TaexNFT1155 is ERC1155, Ownable, ReentrancyGuard {
 
     function transferFrom(address from, address to, uint256 tokenId) external {
         safeTransferFrom(from, to, tokenId, 1, "");
-    }
-
-    /**
-     * @dev Check if an address is a minter.
-     */
-    function isMinter(
-        address account
-    ) public view isNotZeroAddress(minter) returns (bool) {
-        return minter == account;
-    }
-
-    /**
-     * @dev Mint function that allows only the minter to mint new tokens.
-     * Each token has a unique `tokenId` and the `amount` must always be 1 to ensure NFTs.
-     */
-    function mint(
-        address to
-    ) external onlyMinter nonReentrant isNotZeroAddress(to) returns (uint256) {
-        _lastTokenId += 1;
-        uint256 tokenId = _lastTokenId;
-        _mint(to, tokenId, 1, "");
-        tokenPrice[tokenId] = primaryPrice;
-        emit TokenMinted(to, tokenId);
-        return tokenId;
     }
 
     /**
@@ -136,15 +118,6 @@ contract TaexNFT1155 is ERC1155, Ownable, ReentrancyGuard {
     }
 
     /**
-     * @dev External function to change the minter address (only the owner can set a new minter).
-     */
-    function setMinter(
-        address account
-    ) external onlyOwner isNotZeroAddress(account) {
-        minter = account;
-    }
-
-    /**
      * @dev tokenURI to implement the same functionality as TaexNFT ERC721.
      */
     function tokenURI(uint256 _tokenId) public view returns (string memory) {
@@ -171,5 +144,39 @@ contract TaexNFT1155 is ERC1155, Ownable, ReentrancyGuard {
             uint256 id = ids.unsafeMemoryAccess(i);
             _owners[id] = to;
         }
+    }
+
+    /**
+     * @dev mint function
+     */
+    function mint(
+        address to
+    ) external onlyOwner nonReentrant isNotZeroAddress(to) returns (uint256) {
+        _lastTokenId += 1;
+        uint256 tokenId = _lastTokenId;
+        tokenPrice[tokenId] = primaryPrice;
+        tokenPrimaryArtistFee[tokenId] = primaryArtistFee;
+        tokenSecondaryArtistFee[tokenId] = secondaryArtistFee;
+        tokenSecondaryTaexFee[tokenId] = secondaryTaexFee;
+        _mint(to, tokenId, 1, "");
+        emit TokenMinted(to, tokenId);
+        return tokenId;
+    }
+
+    function mintWithSpecifiedFee(
+        address to,
+        uint256 _primaryArtistFee,
+        uint256 _secondaryArtistFee,
+        uint256 _secondaryTaexFee
+    ) external onlyOwner nonReentrant isNotZeroAddress(to) returns (uint256) {
+        _lastTokenId += 1;
+        uint256 tokenId = _lastTokenId;
+        tokenPrice[tokenId] = primaryPrice;
+        tokenPrimaryArtistFee[tokenId] = _primaryArtistFee;
+        tokenSecondaryArtistFee[tokenId] = _secondaryArtistFee;
+        tokenSecondaryTaexFee[tokenId] = _secondaryTaexFee;
+        _mint(to, tokenId, 1, "");
+        emit TokenMinted(to, tokenId);
+        return tokenId;
     }
 }

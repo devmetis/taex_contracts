@@ -9,10 +9,17 @@ contract TaexNFT is ERC721, Ownable, ReentrancyGuard {
     uint256 private _lastTokenId;
 
     string public internalBaseURI;
-    address public minter;
     mapping(uint256 => bool) public isListedForSale;
     mapping(uint256 => uint256) public tokenPrice;
     uint256 public primaryPrice;
+
+    uint256 public primaryArtistFee;
+    uint256 public secondaryArtistFee;
+    uint256 public secondaryTaexFee;
+
+    mapping(uint256 => uint256) public tokenPrimaryArtistFee;
+    mapping(uint256 => uint256) public tokenSecondaryArtistFee;
+    mapping(uint256 => uint256) public tokenSecondaryTaexFee;
 
     modifier isNotZeroAddress(address _address) {
         require(_address != address(0), "TaexNFT: zero address");
@@ -21,11 +28,6 @@ contract TaexNFT is ERC721, Ownable, ReentrancyGuard {
 
     modifier isNotZero(uint256 amount) {
         require(amount > 0, "TaexNFT: zero amount");
-        _;
-    }
-
-    modifier onlyMinter() {
-        require(isMinter(msg.sender), "TaexNFT: not minter");
         _;
     }
 
@@ -39,11 +41,15 @@ contract TaexNFT is ERC721, Ownable, ReentrancyGuard {
         string memory _symbol,
         string memory _uri,
         uint256 _primaryPrice,
-        address _minter
+        uint256 _primaryArtistFee,
+        uint256 _secondaryArtistFee,
+        uint256 _secondaryTaexFee
     ) isNotZero(_primaryPrice) ERC721(_name, _symbol) Ownable(msg.sender) {
         internalBaseURI = _uri;
         primaryPrice = _primaryPrice;
-        minter = _minter;
+        primaryArtistFee = _primaryArtistFee;
+        secondaryArtistFee = _secondaryArtistFee;
+        secondaryTaexFee = _secondaryTaexFee;
     }
 
     function ownerOfToken(uint256 _tokenId) external view returns (address) {
@@ -101,37 +107,35 @@ contract TaexNFT is ERC721, Ownable, ReentrancyGuard {
         primaryPrice = _price;
     }
 
-    /**
-     * @dev mint function
-     */
     function mint(
         address to
-    ) external onlyMinter nonReentrant isNotZeroAddress(to) returns (uint256) {
+    ) external onlyOwner nonReentrant isNotZeroAddress(to) returns (uint256) {
         _lastTokenId += 1;
         uint256 tokenId = _lastTokenId;
         tokenPrice[tokenId] = primaryPrice;
+        tokenPrimaryArtistFee[tokenId] = primaryArtistFee;
+        tokenSecondaryArtistFee[tokenId] = secondaryArtistFee;
+        tokenSecondaryTaexFee[tokenId] = secondaryTaexFee;
         _safeMint(to, tokenId);
         emit TokenMinted(to, tokenId);
         return tokenId;
     }
 
-    /**
-     * @dev Check if an address is a minter
-     * @return true or false based on minter status.
-     */
-    function isMinter(
-        address account
-    ) public view isNotZeroAddress(minter) returns (bool) {
-        return minter == account;
-    }
-
-    /**
-     * @dev External function to change minter
-     */
-    function setMinter(
-        address account
-    ) external onlyOwner isNotZeroAddress(account) {
-        minter = account;
+    function mintWithSpecifiedFee(
+        address to,
+        uint256 _primaryArtistFee,
+        uint256 _secondaryArtistFee,
+        uint256 _secondaryTaexFee
+    ) external onlyOwner nonReentrant isNotZeroAddress(to) returns (uint256) {
+        _lastTokenId += 1;
+        uint256 tokenId = _lastTokenId;
+        tokenPrice[tokenId] = primaryPrice;
+        tokenPrimaryArtistFee[tokenId] = _primaryArtistFee;
+        tokenSecondaryArtistFee[tokenId] = _secondaryArtistFee;
+        tokenSecondaryTaexFee[tokenId] = _secondaryTaexFee;
+        _safeMint(to, tokenId);
+        emit TokenMinted(to, tokenId);
+        return tokenId;
     }
 
     /**

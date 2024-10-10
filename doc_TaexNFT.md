@@ -1,169 +1,41 @@
+### TaexNFT
 
----
+**Overview**
 
-### **Contract: `TaexNFT`**
+The `TaexNFT` contract is an ERC-721 compliant smart contract that allows minting, managing, and trading NFTs on the Ethereum blockchain. It extends the functionality of OpenZeppelin's `ERC721`, `Ownable`, and `ReentrancyGuard` contracts, making use of standard practices for security and ownership. This contract includes functions for minting NFTs, listing and unlisting them for sale, and adjusting their prices, as well as managing artist and treasury fees for primary and secondary sales.
 
-This contract is an ERC721 (NFT) token implementation with additional features like listing for sale, price adjustment, minting by a minter role (will be saleNFT contract), and secure functions with reentrancy protection. It also allows the contract owner to change the base URI and set a primary sale price for minting.
+**Key Functionalities**
 
----
+1. **Minting**
+   - The contract owner can mint new NFTs to specified addresses.
+   - When minting, the owner can specify primary and secondary sale fees (artist and Taex treasury fees).
+   - The `mint` function automatically applies the standard primary price, while `mintWithSpecifiedFee` allows for custom artist and Taex fee configuration.
 
-### **Constructor**
-```solidity
-constructor(
-    string memory _name,
-    string memory _symbol,
-    string memory _uri,
-    uint256 _primaryPrice,
-    address _minter
-)
-```
-- **Purpose**: Initializes the contract with the token name, symbol, base URI, primary sale price and minter address.
-- **Parameters**:
-  - `_name`: Name of the NFT collection.
-  - `_symbol`: Symbol for the NFTs (e.g., “1PX”).
-  - `_uri`: The base URI used for metadata storage.
-  - `_primaryPrice`: The initial price for primary NFT sales.
-  - `_minter`: The address of the SaleNFT contract that will mint the NFTs.
-- **Modifiers**: Uses `isNotZero` to ensure that `_primaryPrice` is not zero.
+2. **Sale Management**
+   - **Listing for Sale**: NFT owners can list their tokens for sale at a specified price using the `listForSale` function.
+   - **Unlisting from Sale**: Owners can remove their NFTs from being listed for sale using `unlistFromSale`.
+   - **Adjusting Price**: The price of listed tokens can be adjusted by the owner with the `adjustPrice` function.
 
----
+3. **Base URI Management**
+   - The contract owner can update the base URI used for token metadata using the `setBaseURI` function.
 
-### **Functions**
+4. **Primary Price Setting**
+   - The owner can set or modify the primary sale price for newly minted tokens.
 
-1. **`ownerOfToken(uint256 _tokenId)`**
-   ```solidity
-   function ownerOfToken(uint256 _tokenId) external view returns (address)
-   ```
-   - **Purpose**: Returns the owner of a specific NFT by its token ID.
-   - **Parameters**: 
-     - `_tokenId`: The ID of the token you want to check.
-   - **Returns**: The address of the owner of the specified token.
+**Modifiers**
 
----
+- **isNotZeroAddress**: Prevents critical functions from being executed with a zero address parameter.
+- **isNotZero**: Ensures numerical values (like prices) are greater than zero.
 
-2. **`listForSale(uint256 _tokenId, uint256 _price)`**
-   ```solidity
-   function listForSale(uint256 _tokenId, uint256 _price) external
-   ```
-   - **Purpose**: Allows the owner of an NFT to list it for sale at a specified price.
-   - **Parameters**: 
-     - `_tokenId`: The ID of the token to list for sale.
-     - `_price`: The listing price of the token.
-   - **Event**: Emits `TokenListedForSale` when a token is successfully listed.
+**Events**
 
----
+- **TokenListedForSale**: Emitted when a token is listed for sale.
+- **TokenUnListedForSale**: Emitted when a token is unlisted from sale.
+- **TokenPriceAdjusted**: Emitted when the price of a listed token is adjusted.
+- **TokenMinted**: Emitted when a new token is minted.
 
-3. **`unlistFromSale(uint256 _tokenId)`**
-   ```solidity
-   function unlistFromSale(uint256 _tokenId) external
-   ```
-   - **Purpose**: Allows the owner of an NFT to remove it from being listed for sale.
-   - **Parameters**: 
-     - `_tokenId`: The ID of the token to unlist.
-   - **Event**: Emits `TokenUnListedForSale` when a token is successfully unlisted.
+**Security Considerations**
 
----
-
-4. **`adjustPrice(uint256 _tokenId, uint256 _price)`**
-   ```solidity
-   function adjustPrice(uint256 _tokenId, uint256 _price) external
-   ```
-   - **Purpose**: Allows the owner to adjust the price of a listed NFT.
-   - **Parameters**: 
-     - `_tokenId`: The ID of the token whose price is being adjusted.
-     - `_price`: The new price for the token.
-   - **Event**: Emits `TokenPriceAdjusted` when the price is successfully changed.
-
----
-
-5. **`setBaseURI(string calldata newBaseUri)`**
-   ```solidity
-   function setBaseURI(string calldata newBaseUri) external onlyOwner
-   ```
-   - **Purpose**: Allows the owner of the contract to set a new base URI for all tokens' metadata.
-   - **Parameters**: 
-     - `newBaseUri`: The new URI that will be used as the base for all token metadata.
-
----
-
-6. **`setPrimaryPrice(uint256 _price)`**
-   ```solidity
-   function setPrimaryPrice(uint256 _price) external isNotZero(_price) onlyOwner
-   ```
-   - **Purpose**: Allows the contract owner to set a new primary price for minting new tokens.
-   - **Parameters**: 
-     - `_price`: The new primary sale price.
-   - **Modifiers**: Uses `isNotZero` to ensure that the price is greater than zero.
-
----
-
-7. **`mint(address to)`**
-   ```solidity
-   function mint(address to) external onlyMinter nonReentrant isNotZeroAddress(to) returns (uint256)
-   ```
-   - **Purpose**: Mints a new token and assigns it to the specified address.
-   - **Parameters**: 
-     - `to`: The address of the new token owner.
-   - **Returns**: The ID of the newly minted token.
-   - **Modifiers**:
-     - `onlyMinter`: Ensures that only the designated minter can call this function, that will be SaleNFT contract.
-     - `nonReentrant`: Prevents reentrancy attacks.
-   - **Event**: Emits `TokenMinted` upon successful minting.
-
----
-
-8. **`isMinter(address account)`**
-   ```solidity
-   function isMinter(address account) public view isNotZeroAddress(minter) returns (bool)
-   ```
-   - **Purpose**: Checks if the given address is the current minter.
-   - **Parameters**: 
-     - `account`: The address to check.
-   - **Returns**: A boolean value indicating whether the address is the current minter.
-
----
-
-9. **`setMinter(address account)`**
-   ```solidity
-   function setMinter(address account) external onlyOwner isNotZeroAddress(account)
-   ```
-   - **Purpose**: Allows the contract owner to change the minter role to a new address.
-   - **Parameters**: 
-     - `account`: The new address to set as the minter.
-   - **Modifiers**: Ensures the new minter address is not the zero address.
-
-
-
-### **Modifiers**
-
-1. **`isNotZeroAddress(address _address)`**
-   ```solidity
-   modifier isNotZeroAddress(address _address)
-   ```
-   - **Purpose**: Prevents function execution if the provided address is the zero address.
-
----
-
-2. **`isNotZero(uint256 amount)`**
-   ```solidity
-   modifier isNotZero(uint256 amount)
-   ```
-   - **Purpose**: Prevents function execution if the provided amount is zero.
-
----
-
-3. **`onlyMinter()`**
-   ```solidity
-   modifier onlyMinter()
-   ```
-   - **Purpose**: Restricts function execution to the minter address.
-
----
-
-### **Events**
-- **`TokenListedForSale(uint256 tokenId, uint256 price)`**: Emitted when a token is listed for sale.
-- **`TokenUnListedForSale(uint256 tokenId)`**: Emitted when a token is unlisted from sale.
-- **`TokenPriceAdjusted(uint256 tokenId, uint256 price)`**: Emitted when the price of a token is adjusted.
-- **`TokenMinted(address indexed to, uint256 tokenId)`**: Emitted when a new token is minted.
-
----
+- **Reentrancy Protection**: The `nonReentrant` modifier is used in minting functions to prevent reentrancy attacks.
+- **Access Control**: Functions like `mint`, `setBaseURI`, and `setPrimaryPrice` are restricted to the owner, ensuring control over critical aspects of the contract.
+- **Zero Address Checks**: The use of `isNotZeroAddress` ensures that tokens are not accidentally minted to the zero address, avoiding potential loss of NFTs.
