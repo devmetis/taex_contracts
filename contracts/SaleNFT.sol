@@ -41,7 +41,11 @@ contract SaleNFT is Ownable, ReentrancyGuard {
     constructor(
         address _artistTreasury,
         address _taexTreasury
-    ) isNotZeroAddress(_artistTreasury) isNotZeroAddress(_taexTreasury) Ownable(msg.sender) {
+    )
+        isNotZeroAddress(_artistTreasury)
+        isNotZeroAddress(_taexTreasury)
+        Ownable(msg.sender)
+    {
         artistTreasury = _artistTreasury;
         taexTreasury = _taexTreasury;
     }
@@ -63,16 +67,24 @@ contract SaleNFT is Ownable, ReentrancyGuard {
         // Ensure the sent amount is at least the price
         require(msg.value >= price, "SaleNFT: Insufficient Amount to sale NFT");
 
+        // Transfer the NFT to the buyer
+        ITaexNFT(_taexNFT).transferFrom(owner, msg.sender, _tokenId);
+        // Verify transfer was successful
+        require(ITaexNFT(_taexNFT).ownerOfToken(_tokenId) == msg.sender, "SaleNFT: NFT transfer failed");
+
         // Calculate the sale fee
         uint256 primaryArtistFeeAmount = (price * primaryArtistFee) / 100;
 
-        (bool successArtist, ) = payable(artistTreasury).call{
-            value: primaryArtistFeeAmount
-        }("");
-        require(
-            successArtist,
-            "SaleNFT: Failed to transfer ETH to artist treasury"
-        );
+        if (primaryArtistFeeAmount > 0) {
+            (bool successArtist, ) = payable(artistTreasury).call{
+                value: primaryArtistFeeAmount
+            }("");
+            require(
+                successArtist,
+                "SaleNFT: Failed to transfer ETH to artist treasury"
+            );
+        }
+
         (bool successTaex, ) = payable(taexTreasury).call{
             value: price - primaryArtistFeeAmount
         }("");
@@ -80,9 +92,6 @@ contract SaleNFT is Ownable, ReentrancyGuard {
             successTaex,
             "SaleNFT: Failed to transfer ETH to Taex treasury"
         );
-
-        // Transfer the NFT to the buyer
-        ITaexNFT(_taexNFT).transferFrom(owner, msg.sender, _tokenId);
 
         // If the buyer sent more than the price, refund the excess
         if (msg.value > price) {
@@ -110,6 +119,11 @@ contract SaleNFT is Ownable, ReentrancyGuard {
         // Ensure the buyer has sent enough ETH
         require(msg.value >= price, "SaleNFT: Insufficient Amount to buy NFT");
 
+        // Transfer the NFT to the buyer
+        ITaexNFT(_taexNFT).transferFrom(owner, msg.sender, _tokenId);
+        // Verify transfer was successful
+        require(ITaexNFT(_taexNFT).ownerOfToken(_tokenId) == msg.sender, "SaleNFT: NFT transfer failed");
+
         uint256 secondaryArtistFee = ITaexNFT(_taexNFT).tokenSecondaryArtistFee(
             _tokenId
         );
@@ -126,24 +140,25 @@ contract SaleNFT is Ownable, ReentrancyGuard {
         }("");
         require(successOwner, "SaleNFT: Failed to transfer ETH to owner ");
 
-        (bool successArtist, ) = payable(artistTreasury).call{
-            value: secondaryArtistFeeAmount
-        }("");
-        require(
-            successArtist,
-            "SaleNFT: Failed to transfer ETH to artist treasury"
-        );
+        if (secondaryArtistFeeAmount > 0) {
+            (bool successArtist, ) = payable(artistTreasury).call{
+                value: secondaryArtistFeeAmount
+            }("");
+            require(
+                successArtist,
+                "SaleNFT: Failed to transfer ETH to artist treasury"
+            );
+        }
 
-        (bool successTaex, ) = payable(taexTreasury).call{
-            value: secondaryTaexFeeAmount
-        }("");
-        require(
-            successTaex,
-            "SaleNFT: Failed to transfer ETH to Taex treasury"
-        );
-
-        // Transfer the NFT to the buyer
-        ITaexNFT(_taexNFT).transferFrom(owner, msg.sender, _tokenId);
+        if (secondaryTaexFeeAmount > 0) {
+            (bool successTaex, ) = payable(taexTreasury).call{
+                value: secondaryTaexFeeAmount
+            }("");
+            require(
+                successTaex,
+                "SaleNFT: Failed to transfer ETH to Taex treasury"
+            );
+        }
 
         // If the buyer sent more than the price, refund the excess
         if (msg.value > price) {

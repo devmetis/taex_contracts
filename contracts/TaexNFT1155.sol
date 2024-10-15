@@ -146,29 +146,12 @@ contract TaexNFT1155 is ERC1155, Ownable, ReentrancyGuard {
         }
     }
 
-    /**
-     * @dev mint function
-     */
-    function mint(
-        address to
-    ) external onlyOwner nonReentrant isNotZeroAddress(to) returns (uint256) {
-        _lastTokenId += 1;
-        uint256 tokenId = _lastTokenId;
-        tokenPrice[tokenId] = primaryPrice;
-        tokenPrimaryArtistFee[tokenId] = primaryArtistFee;
-        tokenSecondaryArtistFee[tokenId] = secondaryArtistFee;
-        tokenSecondaryTaexFee[tokenId] = secondaryTaexFee;
-        _mint(to, tokenId, 1, "");
-        emit TokenMinted(to, tokenId);
-        return tokenId;
-    }
-
-    function mintWithSpecifiedFee(
+    function _mintTaex(
         address to,
         uint256 _primaryArtistFee,
         uint256 _secondaryArtistFee,
         uint256 _secondaryTaexFee
-    ) external onlyOwner nonReentrant isNotZeroAddress(to) returns (uint256) {
+    ) internal returns (uint256) {
         _lastTokenId += 1;
         uint256 tokenId = _lastTokenId;
         tokenPrice[tokenId] = primaryPrice;
@@ -178,5 +161,32 @@ contract TaexNFT1155 is ERC1155, Ownable, ReentrancyGuard {
         _mint(to, tokenId, 1, "");
         emit TokenMinted(to, tokenId);
         return tokenId;
+    }
+
+    function mint(
+        address to
+    ) external onlyOwner nonReentrant isNotZeroAddress(to) returns (uint256) {
+        return
+            _mintTaex(
+                to,
+                primaryArtistFee,
+                secondaryArtistFee,
+                secondaryTaexFee
+            );
+    }
+
+    function mintWithSpecifiedFee(
+        address to,
+        uint256 _primaryArtistFee,
+        uint256 _secondaryArtistFee,
+        uint256 _secondaryTaexFee
+    ) external onlyOwner nonReentrant isNotZeroAddress(to) returns (uint256) {
+        return
+            _mintTaex(
+                to,
+                _primaryArtistFee,
+                _secondaryArtistFee,
+                _secondaryTaexFee
+            );
     }
 }
