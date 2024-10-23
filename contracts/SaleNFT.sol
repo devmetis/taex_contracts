@@ -1,31 +1,31 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity 0.8.20;
 
-import "@openzeppelin/contracts/access/Ownable.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 interface ITaexNFT {
-    function isListedForSale(uint256) external view returns (bool);
-    function tokenPrice(uint256) external view returns (uint256);
-    function ownerOfToken(uint256) external view returns (address);
-    function tokenPrimaryArtistFee(uint256) external view returns (uint256);
-    function tokenSecondaryArtistFee(uint256) external view returns (uint256);
-    function tokenSecondaryTaexFee(uint256) external view returns (uint256);
+    function tokenData(
+        uint256 tokenId
+    )
+        external
+        view
+        returns (
+            bool isListedForSale,
+            uint8 primaryArtistFee,
+            uint8 secondaryArtistFee,
+            uint8 secondaryTaexFee,
+            uint256 price
+        );
+    function ownerOfToken(uint256 tokenId) external view returns (address);
     function transferFrom(address from, address to, uint256 tokenId) external;
 }
+
 contract SaleNFT is Ownable, ReentrancyGuard {
     address public artistTreasury;
     address public taexTreasury;
+    mapping(address => bool) public whitelist;
 
-    modifier isNotZeroAddress(address _address) {
-        require(_address != address(0), "SaleNFT: zero address");
-        _;
-    }
-
-    modifier isNotZero(uint256 amount) {
-        require(amount > 0, "SaleNFT: zero amount");
-        _;
-    }
     event PrimarySale(
         address indexed nft,
         uint256 indexed tokenId,
@@ -37,15 +37,37 @@ contract SaleNFT is Ownable, ReentrancyGuard {
         address indexed to
     );
     event ETHWithdrawn(address indexed to, uint256 amount);
+    event SetArtistTreasury(address indexed treasury);
+    event SetTaexTreasury(address indexed treasury);
+    event AddToWhitelist(address indexed nftContract);
+    event RemoveFromWhitelist(address indexed nftContract);
+
+    error InvalidTokenId();
+    error ZeroAmount();
+    error InsufficientAmount();
+    error TransferNFTFailed();
+    error TransferETHToArtistFailed();
+    error TransferETHToTaexFailed();
+    error TransferETHToOwnerFailed();
+    error TransferETHToWithdrawFailed();
+    error NotListedForSale();
+    error NoExistETHTowithdraw();
+    error NotWhitelistedNFT();
+
+    modifier onlyWhitelisted(address _taexNFT) {
+        if (!whitelist[_taexNFT]) revert NotWhitelistedNFT();
+        _;
+    }
+
+    modifier isNotZero(uint256 _amount) {
+        if (_amount == 0) revert ZeroAmount();
+        _;
+    }
 
     constructor(
         address _artistTreasury,
         address _taexTreasury
-    )
-        isNotZeroAddress(_artistTreasury)
-        isNotZeroAddress(_taexTreasury)
-        Ownable(msg.sender)
-    {
+    ) Ownable(msg.sender) {
         artistTreasury = _artistTreasury;
         taexTreasury = _taexTreasury;
     }
@@ -53,114 +75,99 @@ contract SaleNFT is Ownable, ReentrancyGuard {
     function primarySale(
         address _taexNFT,
         uint256 _tokenId
-    ) external payable nonReentrant isNotZeroAddress(_taexNFT) {
-        // Retrieve the token price
-        uint256 price = ITaexNFT(_taexNFT).tokenPrice(_tokenId);
+    ) external payable nonReentrant onlyWhitelisted(_taexNFT) {
+        // Retrieve token data
+        (, uint8 primaryArtistFee, , , uint256 price) = ITaexNFT(_taexNFT)
+            .tokenData(_tokenId);
         address owner = ITaexNFT(_taexNFT).ownerOfToken(_tokenId);
-        // Check that the token has an owner
-        require(owner != address(0), "SaleNFT: zero address");
 
-        uint256 primaryArtistFee = ITaexNFT(_taexNFT).tokenPrimaryArtistFee(
-            _tokenId
-        );
+        if (owner == address(0)) revert InvalidTokenId(); // Validate owner
+        if (msg.value < price) revert InsufficientAmount(); // Validate payment
 
-        // Ensure the sent amount is at least the price
-        require(msg.value >= price, "SaleNFT: Insufficient Amount to sale NFT");
-
-        // Transfer the NFT to the buyer
+        // Transfer NFT to buyer
         ITaexNFT(_taexNFT).transferFrom(owner, msg.sender, _tokenId);
-        // Verify transfer was successful
-        require(ITaexNFT(_taexNFT).ownerOfToken(_tokenId) == msg.sender, "SaleNFT: NFT transfer failed");
 
-        // Calculate the sale fee
-        uint256 primaryArtistFeeAmount = (price * primaryArtistFee) / 100;
-
-        if (primaryArtistFeeAmount > 0) {
-            (bool successArtist, ) = payable(artistTreasury).call{
-                value: primaryArtistFeeAmount
-            }("");
-            require(
-                successArtist,
-                "SaleNFT: Failed to transfer ETH to artist treasury"
-            );
+        if (ITaexNFT(_taexNFT).ownerOfToken(_tokenId) != msg.sender) {
+            revert TransferNFTFailed();
         }
 
-        (bool successTaex, ) = payable(taexTreasury).call{
-            value: price - primaryArtistFeeAmount
-        }("");
-        require(
-            successTaex,
-            "SaleNFT: Failed to transfer ETH to Taex treasury"
-        );
+        // Calculate fees
+        uint256 artistFeeAmount = (price * primaryArtistFee) / 100;
 
-        // If the buyer sent more than the price, refund the excess
+        // Pay artist treasury
+        if (artistFeeAmount > 0) {
+            (bool successArtist, ) = payable(artistTreasury).call{
+                value: artistFeeAmount
+            }("");
+            if (!successArtist) revert TransferETHToArtistFailed();
+        }
+
+        // Pay Taex treasury
+        (bool successTaex, ) = payable(taexTreasury).call{
+            value: price - artistFeeAmount
+        }("");
+        if (!successTaex) revert TransferETHToTaexFailed();
+
+        // Refund excess ETH if sent more than required
         if (msg.value > price) {
             payable(msg.sender).transfer(msg.value - price);
         }
+
         emit PrimarySale(_taexNFT, _tokenId, msg.sender);
     }
 
     function secondarySale(
         address _taexNFT,
         uint256 _tokenId
-    ) external payable nonReentrant isNotZeroAddress(_taexNFT) {
+    ) external payable nonReentrant onlyWhitelisted(_taexNFT) {
+        // Retrieve token data
+        (
+            bool isListed,
+            ,
+            uint8 secondaryArtistFee,
+            uint8 secondaryTaexFee,
+            uint256 price
+        ) = ITaexNFT(_taexNFT).tokenData(_tokenId);
         address owner = ITaexNFT(_taexNFT).ownerOfToken(_tokenId);
 
-        // Check that the token has an owner
-        require(owner != address(0), "SaleNFT: zero address");
+        if (owner == address(0)) revert InvalidTokenId(); // Validate owner
+        if (!isListed) revert NotListedForSale(); // Ensure token is listed for sale
+        if (msg.value < price) revert InsufficientAmount(); // Validate payment
 
-        // Ensure the token is listed for sale
-        bool isListed = ITaexNFT(_taexNFT).isListedForSale(_tokenId);
-        require(isListed, "SaleNFT: Not listed for sale");
-
-        // Retrieve the token price
-        uint256 price = ITaexNFT(_taexNFT).tokenPrice(_tokenId);
-
-        // Ensure the buyer has sent enough ETH
-        require(msg.value >= price, "SaleNFT: Insufficient Amount to buy NFT");
-
-        // Transfer the NFT to the buyer
+        // Transfer NFT to buyer
         ITaexNFT(_taexNFT).transferFrom(owner, msg.sender, _tokenId);
-        // Verify transfer was successful
-        require(ITaexNFT(_taexNFT).ownerOfToken(_tokenId) == msg.sender, "SaleNFT: NFT transfer failed");
 
-        uint256 secondaryArtistFee = ITaexNFT(_taexNFT).tokenSecondaryArtistFee(
-            _tokenId
-        );
-        uint256 secondaryTaexFee = ITaexNFT(_taexNFT).tokenSecondaryTaexFee(
-            _tokenId
-        );
-        // Calculate the sale fee
-        uint256 secondaryArtistFeeAmount = (price * secondaryArtistFee) / 100;
-        uint256 secondaryTaexFeeAmount = (price * secondaryTaexFee) / 100;
+        if (ITaexNFT(_taexNFT).ownerOfToken(_tokenId) != msg.sender) {
+            revert TransferNFTFailed();
+        }
 
-        // Transfer the remaining amount to the seller (owner of the NFT)
+        // Calculate fees
+        uint256 artistFeeAmount = (price * secondaryArtistFee) / 100;
+        uint256 taexFeeAmount = (price * secondaryTaexFee) / 100;
+
+        // Pay seller (owner)
         (bool successOwner, ) = payable(owner).call{
-            value: price - secondaryArtistFeeAmount - secondaryTaexFeeAmount
+            value: price - artistFeeAmount - taexFeeAmount
         }("");
-        require(successOwner, "SaleNFT: Failed to transfer ETH to owner ");
+        if (!successOwner) revert TransferETHToOwnerFailed();
 
-        if (secondaryArtistFeeAmount > 0) {
+        // Pay artist treasury
+        if (artistFeeAmount > 0) {
             (bool successArtist, ) = payable(artistTreasury).call{
-                value: secondaryArtistFeeAmount
+                value: artistFeeAmount
             }("");
-            require(
-                successArtist,
-                "SaleNFT: Failed to transfer ETH to artist treasury"
-            );
+            if (!successArtist) revert TransferETHToArtistFailed();
         }
 
-        if (secondaryTaexFeeAmount > 0) {
+        // Pay Taex treasury
+        if (taexFeeAmount > 0) {
             (bool successTaex, ) = payable(taexTreasury).call{
-                value: secondaryTaexFeeAmount
+                value: taexFeeAmount
             }("");
-            require(
-                successTaex,
-                "SaleNFT: Failed to transfer ETH to Taex treasury"
-            );
+            if (!successTaex) revert TransferETHToTaexFailed();
         }
 
-        // If the buyer sent more than the price, refund the excess
+        // Refund excess ETH if sent more than required
         if (msg.value > price) {
             payable(msg.sender).transfer(msg.value - price);
         }
@@ -168,30 +175,33 @@ contract SaleNFT is Ownable, ReentrancyGuard {
         emit SecondarySale(_taexNFT, _tokenId, msg.sender);
     }
 
-    function withdrawETH(address to) external onlyOwner isNotZeroAddress(to) {
+    function withdrawETH(address to) external onlyOwner {
         uint256 balance = address(this).balance;
-        require(balance > 0, "SaleNFT: No ETH to withdraw");
+        if (balance == 0) revert NoExistETHTowithdraw();
 
         (bool success, ) = payable(to).call{value: balance}("");
-        require(success, "SaleNFT: Withdraw rejected ETH transfer");
+        if (!success) revert TransferETHToWithdrawFailed();
 
         emit ETHWithdrawn(to, balance);
     }
 
-    /**
-     * @dev External function to set artist treasury address only by admin
-     */
-    function setArtistTreasury(
-        address _artistTreasury
-    ) external isNotZeroAddress(_artistTreasury) onlyOwner {
+    function setArtistTreasury(address _artistTreasury) external onlyOwner {
         artistTreasury = _artistTreasury;
+        emit SetArtistTreasury(_artistTreasury);
     }
-    /**
-     * @dev External function to set Taex treasury address only by admin
-     */
-    function setTaexTreasury(
-        address _taexTreasury
-    ) external isNotZeroAddress(_taexTreasury) onlyOwner {
+
+    function setTaexTreasury(address _taexTreasury) external onlyOwner {
         taexTreasury = _taexTreasury;
+        emit SetTaexTreasury(_taexTreasury);
+    }
+
+    function addToWhitelist(address _contract) external onlyOwner {
+        whitelist[_contract] = true;
+        emit AddToWhitelist(_contract);
+    }
+
+    function removeFromWhitelist(address _contract) external onlyOwner {
+        whitelist[_contract] = false;
+        emit RemoveFromWhitelist(_contract);
     }
 }
