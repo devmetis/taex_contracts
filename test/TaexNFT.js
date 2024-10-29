@@ -107,4 +107,64 @@ describe("TaexNFT", function () {
     const data = await taexNFT.tokenData(1);
     expect(data[4]).to.equal(BigInt("200000000000000000"));
   });
+
+  // Additional Tests for Better Coverage
+
+  it("should revert if non-owner tries to transfer token", async function () {
+    await taexNFT.connect(owner).mint(owner);
+    await expect(
+      taexNFT.connect(user1).transferFrom(owner, user2, 1)
+    ).to.be.revertedWithCustomError(taexNFT, "ERC721TransferCallerNotOwnerNorApproved");
+  });
+
+  it("should allow owner to approve and transfer token", async function () {
+    await taexNFT.connect(owner).mint(owner);
+    await taexNFT.connect(owner).approve(user1.address, 1);
+    await taexNFT.connect(user1).transferFrom(owner, user2.address, 1);
+    expect(await taexNFT.ownerOfToken(1)).to.equal(user2.address);
+  });
+
+  it("should revert listing for sale if token already listed", async function () {
+    await taexNFT.connect(owner).mint(owner);
+    await taexNFT.connect(owner).listForSale(1, BigInt("200000000000000000"));
+    await expect(
+      taexNFT.connect(owner).listForSale(1, BigInt("300000000000000000"))
+    ).to.be.revertedWithCustomError(taexNFT, "TokenAlreadyListedForSale");
+  });
+
+  it("should revert unlisting if token not listed", async function () {
+    await taexNFT.connect(owner).mint(owner);
+    await expect(
+      taexNFT.connect(owner).unlistFromSale(1)
+    ).to.be.revertedWithCustomError(taexNFT, "TokenNotListedForSale");
+  });
+
+  it("should revert adjusting price if token not listed", async function () {
+    await taexNFT.connect(owner).mint(owner);
+    await expect(
+      taexNFT.connect(owner).adjustPrice(1, BigInt("300000000000000000"))
+    ).to.be.revertedWithCustomError(taexNFT, "TokenNotListedForSale");
+  });
+
+  it("should revert if minting exceeds maximum supply", async function () {
+    for (let i = 0; i < 10; i++) {
+      await taexNFT.connect(owner).mint(owner);
+    }
+    await expect(taexNFT.connect(owner).mint(owner)).to.be.revertedWithCustomError(taexNFT, "MaxSupplyExceeded");
+  });
+
+  it("should handle multiple token sales correctly", async function () {
+    await taexNFT.connect(owner).mint(owner);
+    await taexNFT.connect(owner).listForSale(1, BigInt("100000000000000000"));
+    await taexNFT.connect(owner).mint(owner);
+    await taexNFT.connect(owner).listForSale(2, BigInt("200000000000000000"));
+
+    const data1 = await taexNFT.tokenData(1);
+    expect(data1[0]).to.equal(true);
+    expect(data1[4]).to.equal(BigInt("100000000000000000"));
+
+    const data2 = await taexNFT.tokenData(2);
+    expect(data2[0]).to.equal(true);
+    expect(data2[4]).to.equal(BigInt("200000000000000000"));
+  });
 });

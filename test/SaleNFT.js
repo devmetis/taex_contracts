@@ -58,9 +58,18 @@ describe("SaleNFT", function () {
   it("check if minting correctly", async function () {
     expect(await taexNFT.ownerOfToken(1)).to.equal(owner.address);
     expect(await taexNFT1155.ownerOfToken(1)).to.equal(owner.address);
+
+    // Additional checks for unauthorized minting
+    await expect(taexNFT.connect(user2).mint(user2)).to.be.revertedWith("NotAuthorized");
+    await expect(taexNFT1155.connect(user2).mint(user2)).to.be.revertedWith("NotAuthorized");
+
+    // Additional checks for minting errors
+    await expect(taexNFT.connect(owner).mint(0)).to.be.revertedWith("InvalidMintAmount");
+    await expect(taexNFT1155.connect(owner).mint(0)).to.be.revertedWith("InvalidMintAmount");
   });
 
   it("should fail if execute primarySale or secondarySale with a non-whiteListed contract", async function () {
+    // Test with non-whitelisted contract
     await expect(
       saleNFT.connect(buyer).primarySale(
         user2,
@@ -68,6 +77,43 @@ describe("SaleNFT", function () {
         { value: ethers.parseEther("0.9") } // Less than 1 ETH
       )
     ).to.be.revertedWithCustomError(saleNFT, "NotWhitelistedNFT");
+
+    // Test with invalid token ID
+    await expect(
+      saleNFT.connect(buyer).primarySale(
+        taexNFT.target,
+        9999,
+        { value: ethers.parseEther("1.0") }
+      )
+    ).to.be.revertedWithCustomError(saleNFT, "InvalidTokenID");
+
+    // Test with insufficient ETH sent
+    await expect(
+      saleNFT.connect(buyer).primarySale(
+        taexNFT.target,
+        1,
+        { value: ethers.parseEther("0.5") } // Less than required price
+      )
+    ).to.be.revertedWithCustomError(saleNFT, "InsufficientAmount");
+
+    // Test with token not approved for sale
+    await taexNFT.connect(owner).revokeApproval(saleNFT.target, 1);
+    await expect(
+      saleNFT.connect(buyer).primarySale(
+        taexNFT.target,
+        1,
+        { value: ethers.parseEther("1.0") }
+      )
+    ).to.be.revertedWithCustomError(saleNFT, "TokenNotApproved");
+
+    // Test secondary sale with token not listed for sale
+    await expect(
+      saleNFT.connect(buyer).secondarySale(
+        taexNFT.target,
+        1,
+        { value: ethers.parseEther("1.0") }
+      )
+    ).to.be.revertedWithCustomError(saleNFT, "NotListedForSale");
   });
 
   it("should successfully execute the primary sale", async function () {
@@ -85,7 +131,7 @@ describe("SaleNFT", function () {
     // Execute the primary sale transaction from the buyer
     const tx = await saleNFT
       .connect(buyer)
-      .primarySale(taexNFT.target, 1, { value: ethers.parseEther("1.2") });
+      .primarySale(taexNFT.target, 1, { value: ethers.parseEther("1.0") });
     const receipt = await tx.wait();
 
     // Calculate expected artist fee and taex treasury share
@@ -116,6 +162,43 @@ describe("SaleNFT", function () {
 
     // Verify NFT ownership transferred
     expect(await taexNFT.ownerOfToken(1)).to.equal(buyer.address);
+
+    // Additional edge case tests
+    // Test with minimum fee values (0%)
+    const zeroFeeNFT = await TaexNFT.connect(owner).deploy(
+      "Zero Fee NFT",
+      "ZFNT",
+      "ipfs://",
+      primaryPrice,
+      0, // primaryArtistFee
+      0, // secondaryArtistFee
+      0 // secondaryTaexFee
+    );
+    await zeroFeeNFT.connect(owner).mint(owner);
+    await zeroFeeNFT.connect(owner).approve(saleNFT.target, 1);
+    await saleNFT.connect(owner).addToWhitelist(zeroFeeNFT.target);
+    const txZeroFee = await saleNFT
+      .connect(buyer)
+      .primarySale(zeroFeeNFT.target, 1, { value: ethers.parseEther("1.0") });
+    await txZeroFee.wait();
+    expect(await zeroFeeNFT.ownerOfToken(1)).to.equal(buyer.address);
+
+    // Test with maximum fee values (100%)
+    const maxFeeNFT = await TaexNFT.connect(owner).deploy(
+      "Max Fee NFT",
+      "MFNT",
+      "ipfs://",
+      primaryPrice,
+      100, // primaryArtistFee
+      100, // secondaryArtistFee
+      100 // secondaryTaexFee
+    );
+    await maxFeeNFT.connect(owner).mint(owner);
+    await maxFeeNFT.connect(owner).approve(saleNFT.target, 1);
+    await saleNFT.connect(owner).addToWhitelist(maxFeeNFT.target);
+    await expect(
+      saleNFT.connect(buyer).primarySale(maxFeeNFT.target, 1, { value: ethers.parseEther("1.0") })
+    ).to.be.revertedWith("InvalidFeeConfiguration");
   });
 
   it("should fail if the sent ETH is less than the price", async function () {
@@ -126,6 +209,25 @@ describe("SaleNFT", function () {
         { value: ethers.parseEther("0.9") } // Less than 1 ETH
       )
     ).to.be.revertedWithCustomError(saleNFT, "InsufficientAmount");
+
+    // Test with exactly the required amount
+    await expect(
+      saleNFT.connect(buyer).primarySale(
+        taexNFT.target,
+        1,
+        { value: ethers.parseEther("1.0") } // Exact amount
+      )
+    ).to.not.be.reverted;
+
+    // Check behavior with different contract states
+    await taexNFT.connect(owner).revokeApproval(saleNFT.target, 1);
+    await expect(
+      saleNFT.connect(buyer).primarySale(
+        taexNFT.target,
+        1,
+        { value: ethers.parseEther("1.0") }
+      )
+    ).to.be.revertedWithCustomError(saleNFT, "TokenNotApproved");
   });
 
   it("should fail if the token is not listed for sale", async function () {
@@ -150,7 +252,6 @@ describe("SaleNFT", function () {
     const initialSellerBalance = new BigNumber(
       await ethers.provider.getBalance(owner.address)
     );
-    // const buyerInitialBalance = new BigNumber(await ethers.provider.getBalance(buyer.address));
 
     // Execute the secondary sale with 1.2 ETH (to test refund logic)
     const tx = await saleNFT.connect(buyer).secondarySale(
@@ -181,7 +282,6 @@ describe("SaleNFT", function () {
     const finalSellerBalance = new BigNumber(
       await ethers.provider.getBalance(owner.address)
     );
-    // const buyerFinalBalance = new BigNumber(await ethers.provider.getBalance(buyer.address));
 
     // Verify fees and payments
     expect(finalArtistBalance.minus(initialArtistBalance)).to.equal(
@@ -194,5 +294,21 @@ describe("SaleNFT", function () {
 
     // Verify NFT ownership transferred to the buyer
     expect(await taexNFT.ownerOf(1)).to.equal(buyer.address);
+
+    // Additional test for handling multiple sales
+    await taexNFT.connect(buyer).listForSale(1, primaryPrice);
+    await saleNFT.connect(user2).secondarySale(taexNFT.target, 1, {
+      value: ethers.parseEther("1.0"),
+    });
+    expect(await taexNFT.ownerOf(1)).to.equal(user2.address);
+
+    // Additional test for different token IDs
+    await taexNFT.connect(owner).mint(owner);
+    await taexNFT.connect(owner).approve(saleNFT.target, 2);
+    await taexNFT.connect(owner).listForSale(2, primaryPrice);
+    await saleNFT.connect(buyer).secondarySale(taexNFT.target, 2, {
+      value: ethers.parseEther("1.0"),
+    });
+    expect(await taexNFT.ownerOf(2)).to.equal(buyer.address);
   });
 });
