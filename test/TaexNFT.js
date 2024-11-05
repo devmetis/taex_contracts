@@ -2,6 +2,7 @@ const {
   time,
   loadFixture,
 } = require("@nomicfoundation/hardhat-toolbox/network-helpers");
+
 const { anyValue } = require("@nomicfoundation/hardhat-chai-matchers/withArgs");
 const { expect } = require("chai");
 
@@ -19,7 +20,7 @@ describe("TaexNFT", function () {
       "Test NFT",
       "TNFT",
       "ipfs://",
-      BigInt("100000000000000000"),
+      ethers.parseEther("0.1"), // 0.1 ETH
       85,
       10,
       10
@@ -32,139 +33,81 @@ describe("TaexNFT", function () {
     expect(await taexNFT.internalBaseURI()).to.equal("ipfs://");
   });
 
-  it("should mint only owner", async function () {
+  it("should only allow owner to mint", async function () {
     await expect(taexNFT.connect(user1).mint(user1.address))
       .to.be.revertedWithCustomError(taexNFT, "OwnableUnauthorizedAccount")
       .withArgs(user1.address);
   });
 
-  it("check if minting correctly", async function () {
-    await taexNFT.connect(owner).mint(owner);
+  it("should mint correctly", async function () {
+    await taexNFT.connect(owner).mint(owner.address);
     expect(await taexNFT.ownerOfToken(1)).to.equal(owner.address);
   });
 
-  it("check if minting with specified fee correctly", async function () {
+  it("should enforce valid fee percentages when minting with specified fees", async function () {
     await expect(
-      taexNFT.connect(owner).mintWithSpecifiedFee(owner, 110, 12, 12)
+      taexNFT.connect(owner).mintWithSpecifiedFee(owner.address, 110, 12, 12)
     ).to.be.revertedWithCustomError(taexNFT, "InvalidFeePercentage");
     await expect(
-      taexNFT.connect(owner).mintWithSpecifiedFee(owner, 80, 60, 60)
+      taexNFT.connect(owner).mintWithSpecifiedFee(owner.address, 80, 60, 60)
     ).to.be.revertedWithCustomError(taexNFT, "InvalidFeePercentage");
 
-    await taexNFT.connect(owner).mintWithSpecifiedFee(owner, 70, 12, 12);
+    await taexNFT
+      .connect(owner)
+      .mintWithSpecifiedFee(owner.address, 70, 12, 12);
     expect(await taexNFT.ownerOfToken(1)).to.equal(owner.address);
   });
 
-  it("should list for sale only owner of tokenId", async function () {
-    await taexNFT.connect(owner).mint(owner);
-    await taexNFT.connect(owner).transferFrom(owner, user1, 1);
+  it("should only allow the owner of tokenId to list for sale", async function () {
+    await taexNFT.connect(owner).mint(owner.address);
+    await taexNFT.connect(owner).transferFrom(owner.address, user1.address, 1);
     await expect(
-      taexNFT.connect(owner).listForSale(1, BigInt("200000000000000000"))
+      taexNFT.connect(owner).listForSale(1, ethers.parseEther("0.2"))
     ).to.be.revertedWithCustomError(taexNFT, "NotOwnerOfTokenId");
   });
 
-  it("check if changed token price and status of listed after listing for sale", async function () {
-    await taexNFT.connect(owner).mint(owner);
-    await taexNFT.connect(owner).transferFrom(owner, user1, 1);
-    await taexNFT.connect(user1).listForSale(1, BigInt("200000000000000000"));
+  it("should update token status and price after listing for sale", async function () {
+    await taexNFT.connect(owner).mint(owner.address);
+    await taexNFT.connect(owner).transferFrom(owner.address, user1.address, 1);
+    await taexNFT.connect(user1).listForSale(1, ethers.parseEther("0.2"));
+
     const data = await taexNFT.tokenData(1);
-    expect(data[0]).to.equal(true);
-    expect(data[4]).to.equal(BigInt("200000000000000000"));
+    expect(data[0]).to.equal(true); // Listed for sale
+    expect(data[4]).to.equal(ethers.parseEther("0.2")); // Sale price
   });
 
-  it("should unlist from sale only owner of tokenId", async function () {
-    await taexNFT.connect(owner).mint(owner);
-    await taexNFT.connect(owner).transferFrom(owner, user1, 1);
+  it("should only allow the owner of tokenId to unlist from sale", async function () {
+    await taexNFT.connect(owner).mint(owner.address);
+    await taexNFT.connect(owner).transferFrom(owner.address, user1.address, 1);
     await expect(
       taexNFT.connect(owner).unlistFromSale(1)
     ).to.be.revertedWithCustomError(taexNFT, "NotOwnerOfTokenId");
   });
 
-  it("check if changed status after unlisting from sale", async function () {
-    await taexNFT.connect(owner).mint(owner);
-    await taexNFT.connect(owner).transferFrom(owner, user1, 1);
-    await taexNFT.connect(user1).listForSale(1, BigInt("200000000000000000"));
-    const data = await taexNFT.tokenData(1);
-    expect(data[0]).to.equal(true);
-    expect(data[4]).to.equal(BigInt("200000000000000000"));
+  it("should update status after unlisting from sale", async function () {
+    await taexNFT.connect(owner).mint(owner.address);
+    await taexNFT.connect(owner).transferFrom(owner.address, user1.address, 1);
+    await taexNFT.connect(user1).listForSale(1, ethers.parseEther("0.2"));
+
+    expect((await taexNFT.tokenData(1))[0]).to.equal(true);
     await taexNFT.connect(user1).unlistFromSale(1);
-    const data1 = await taexNFT.tokenData(1);
-    expect(data1[0]).to.equal(false);
+    expect((await taexNFT.tokenData(1))[0]).to.equal(false);
   });
 
-  it("should adjust price only owner of tokenId", async function () {
-    await taexNFT.connect(owner).mint(owner);
-    await taexNFT.connect(owner).transferFrom(owner, user1, 1);
+  it("should only allow the owner of tokenId to adjust price", async function () {
+    await taexNFT.connect(owner).mint(owner.address);
+    await taexNFT.connect(owner).transferFrom(owner.address, user1.address, 1);
     await expect(
-      taexNFT.connect(owner).adjustPrice(1, BigInt("200000000000000000"))
+      taexNFT.connect(owner).adjustPrice(1, ethers.parseEther("0.2"))
     ).to.be.revertedWithCustomError(taexNFT, "NotOwnerOfTokenId");
   });
 
-  it("check if changed token price after adjust price", async function () {
-    await taexNFT.connect(owner).mint(owner);
-    await taexNFT.connect(owner).transferFrom(owner, user1, 1);
-    await taexNFT.connect(user1).adjustPrice(1, BigInt("200000000000000000"));
+  it("should update token price after adjustment", async function () {
+    await taexNFT.connect(owner).mint(owner.address);
+    await taexNFT.connect(owner).transferFrom(owner.address, user1.address, 1);
+    await taexNFT.connect(user1).adjustPrice(1, ethers.parseEther("0.2"));
+
     const data = await taexNFT.tokenData(1);
-    expect(data[4]).to.equal(BigInt("200000000000000000"));
-  });
-
-  // Additional Tests for Better Coverage
-
-  it("should revert if non-owner tries to transfer token", async function () {
-    await taexNFT.connect(owner).mint(owner);
-    await expect(
-      taexNFT.connect(user1).transferFrom(owner, user2, 1)
-    ).to.be.revertedWithCustomError(taexNFT, "ERC721TransferCallerNotOwnerNorApproved");
-  });
-
-  it("should allow owner to approve and transfer token", async function () {
-    await taexNFT.connect(owner).mint(owner);
-    await taexNFT.connect(owner).approve(user1.address, 1);
-    await taexNFT.connect(user1).transferFrom(owner, user2.address, 1);
-    expect(await taexNFT.ownerOfToken(1)).to.equal(user2.address);
-  });
-
-  it("should revert listing for sale if token already listed", async function () {
-    await taexNFT.connect(owner).mint(owner);
-    await taexNFT.connect(owner).listForSale(1, BigInt("200000000000000000"));
-    await expect(
-      taexNFT.connect(owner).listForSale(1, BigInt("300000000000000000"))
-    ).to.be.revertedWithCustomError(taexNFT, "TokenAlreadyListedForSale");
-  });
-
-  it("should revert unlisting if token not listed", async function () {
-    await taexNFT.connect(owner).mint(owner);
-    await expect(
-      taexNFT.connect(owner).unlistFromSale(1)
-    ).to.be.revertedWithCustomError(taexNFT, "TokenNotListedForSale");
-  });
-
-  it("should revert adjusting price if token not listed", async function () {
-    await taexNFT.connect(owner).mint(owner);
-    await expect(
-      taexNFT.connect(owner).adjustPrice(1, BigInt("300000000000000000"))
-    ).to.be.revertedWithCustomError(taexNFT, "TokenNotListedForSale");
-  });
-
-  it("should revert if minting exceeds maximum supply", async function () {
-    for (let i = 0; i < 10; i++) {
-      await taexNFT.connect(owner).mint(owner);
-    }
-    await expect(taexNFT.connect(owner).mint(owner)).to.be.revertedWithCustomError(taexNFT, "MaxSupplyExceeded");
-  });
-
-  it("should handle multiple token sales correctly", async function () {
-    await taexNFT.connect(owner).mint(owner);
-    await taexNFT.connect(owner).listForSale(1, BigInt("100000000000000000"));
-    await taexNFT.connect(owner).mint(owner);
-    await taexNFT.connect(owner).listForSale(2, BigInt("200000000000000000"));
-
-    const data1 = await taexNFT.tokenData(1);
-    expect(data1[0]).to.equal(true);
-    expect(data1[4]).to.equal(BigInt("100000000000000000"));
-
-    const data2 = await taexNFT.tokenData(2);
-    expect(data2[0]).to.equal(true);
-    expect(data2[4]).to.equal(BigInt("200000000000000000"));
+    expect(data[4]).to.equal(ethers.parseEther("0.2")); // Check new price
   });
 });

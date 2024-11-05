@@ -1,49 +1,36 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.20;
 
-import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
-import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {ITaexNFT} from "./interfaces/ITaexNFT.sol";
 
 /**
- * @title TaexNFT Contract
- * @notice This contract implements an ERC721 NFT with additional features for listing, unlisting, and adjusting prices.
+ * @title TaexNFT
+ * @dev Implementation of an ERC721 NFT contract with fee management.
  */
-contract TaexNFT is ERC721, Ownable2Step, ReentrancyGuard {
-    uint256 private _lastTokenId;
-
-    /// @notice Base URI for NFT metadata
-    string public internalBaseURI;
+contract TaexNFT is ERC721, Ownable, ReentrancyGuard, ITaexNFT {
+    uint256 private _lastTokenId; // Last minted token ID
+    string public internalBaseURI; // Base URI for metadata
 
     struct TokenData {
-        bool isListedForSale;
-        uint8 primaryArtistFee;
-        uint8 secondaryArtistFee;
-        uint8 secondaryTaexFee;
-        uint256 price;
+        bool isListedForSale; // Indicates if the token is listed for sale
+        uint8 primaryArtistFee; // Primary artist fee percentage
+        uint8 secondaryArtistFee; // Secondary artist fee percentage
+        uint8 secondaryTaexFee; // Secondary Taex fee percentage
+        uint256 price; // Sale price of the token
     }
 
-    mapping(uint256 => TokenData) public tokenData;
-
-    event TokenListedForSale(uint256 tokenId, uint256 price);
-    event TokenUnlistedFromSale(uint256 tokenId);
-    event TokenPriceAdjusted(uint256 tokenId, uint256 price);
-    event TokenMinted(address indexed to, uint256 tokenId);
-    event SetBaseURI(string);
-    event SetDefaultData(uint256, uint8, uint8, uint8);
-
-    error ZeroAddress();
-    error ZeroAmount();
-    error NotOwnerOfTokenId();
-    error InvalidFeePercentage();
+    mapping(uint256 => TokenData) public tokenData; // Mapping of token ID to its data
 
     modifier isNotZeroAddress(address _address) {
-        if (_address == address(0)) revert ZeroAddress();
+        require(_address != address(0), "Zero address not allowed");
         _;
     }
 
     modifier isNotZero(uint256 _amount) {
-        if (_amount == 0) revert ZeroAmount();
+        require(_amount > 0, "Amount cannot be zero");
         _;
     }
 
@@ -52,22 +39,15 @@ contract TaexNFT is ERC721, Ownable2Step, ReentrancyGuard {
         _;
     }
 
-    modifier validFees(uint8 _primaryArtistFee, uint8 _secondaryArtistFee, uint8 _secondaryTaexFee) {
-        if (_primaryArtistFee > 50 || _secondaryArtistFee > 50 || _secondaryTaexFee > 50) {
-            revert InvalidFeePercentage();
-        }
-        _;
-    }
-
     /**
-     * @notice Constructor to initialize the TaexNFT contract
-     * @param _name The name of the NFT collection
-     * @param _symbol The symbol of the NFT collection
-     * @param _uri The base URI for the NFT metadata
-     * @param _primaryPrice The default primary sale price for the NFTs
-     * @param _primaryArtistFee The artist fee percentage for primary sales
-     * @param _secondaryArtistFee The artist fee percentage for secondary sales
-     * @param _secondaryTaexFee The Taex fee percentage for secondary sales
+     * @dev Constructor to initialize the NFT contract with name, symbol, and fee settings.
+     * @param _name Name of the NFT contract
+     * @param _symbol Symbol of the NFT contract
+     * @param _uri Initial base URI for token metadata
+     * @param _primaryPrice Initial primary sale price for tokens
+     * @param _primaryArtistFee Primary artist fee percentage
+     * @param _secondaryArtistFee Secondary artist fee percentage
+     * @param _secondaryTaexFee Secondary Taex fee percentage
      */
     constructor(
         string memory _name,
@@ -81,9 +61,8 @@ contract TaexNFT is ERC721, Ownable2Step, ReentrancyGuard {
         isNotZero(_primaryPrice)
         isValidFeePercentage(_primaryArtistFee)
         isValidFeePercentage(_secondaryArtistFee + _secondaryTaexFee)
-        validFees(_primaryArtistFee, _secondaryArtistFee, _secondaryTaexFee)
         ERC721(_name, _symbol)
-        Ownable2Step()
+        Ownable(msg.sender)
     {
         internalBaseURI = _uri;
         tokenData[0].price = _primaryPrice; // Default primary price for future tokens
@@ -93,7 +72,7 @@ contract TaexNFT is ERC721, Ownable2Step, ReentrancyGuard {
     }
 
     /**
-     * @notice Returns the owner of a given token ID
+     * @dev Returns the owner of a given token ID.
      * @param _tokenId The ID of the token to query
      * @return The address of the token owner
      */
@@ -102,9 +81,20 @@ contract TaexNFT is ERC721, Ownable2Step, ReentrancyGuard {
     }
 
     /**
-     * @notice Lists an NFT for sale
-     * @param _tokenId The ID of the token to list for sale
-     * @param _price The price at which the token will be listed
+     * @dev Overrides the transferFrom function to ensure proper checks are made.
+     */
+    function transferFrom(
+        address from,
+        address to,
+        uint256 tokenId
+    ) public override(ITaexNFT, ERC721) {
+        ERC721.transferFrom(from, to, tokenId);
+    }
+
+    /**
+     * @dev Lists NFT for sale by the token's owner.
+     * @param _tokenId The ID of the token to list
+     * @param _price The price at which the token will be listed for sale
      */
     function listForSale(uint256 _tokenId, uint256 _price) external {
         if (ownerOf(_tokenId) != msg.sender) revert NotOwnerOfTokenId();
@@ -116,8 +106,8 @@ contract TaexNFT is ERC721, Ownable2Step, ReentrancyGuard {
     }
 
     /**
-     * @notice Unlists an NFT from sale
-     * @param _tokenId The ID of the token to unlist from sale
+     * @dev Unlists NFT from sale by the token's owner.
+     * @param _tokenId The ID of the token to unlist
      */
     function unlistFromSale(uint256 _tokenId) external {
         if (ownerOf(_tokenId) != msg.sender) revert NotOwnerOfTokenId();
@@ -128,8 +118,8 @@ contract TaexNFT is ERC721, Ownable2Step, ReentrancyGuard {
     }
 
     /**
-     * @notice Adjusts the price of an NFT listed for sale
-     * @param _tokenId The ID of the token for which the price will be adjusted
+     * @dev Adjusts the price of an NFT by the token's owner.
+     * @param _tokenId The ID of the token to adjust
      * @param _price The new price for the token
      */
     function adjustPrice(uint256 _tokenId, uint256 _price) external {
@@ -141,20 +131,20 @@ contract TaexNFT is ERC721, Ownable2Step, ReentrancyGuard {
     }
 
     /**
-     * @notice Internal function to mint an NFT with specified fees and data
-     * @param to The address to receive the minted NFT
-     * @param _primaryArtistFee The artist fee percentage for the primary sale
-     * @param _secondaryArtistFee The artist fee percentage for the secondary sale
-     * @param _secondaryTaexFee The Taex fee percentage for the secondary sale
-     * @return The ID of the newly minted token
+     * @dev Internal function to mint NFTs with specified fees and data.
+     * @param to The address to mint the token to
+     * @param _primaryArtistFee Primary artist fee percentage
+     * @param _secondaryArtistFee Secondary artist fee percentage
+     * @param _secondaryTaexFee Secondary Taex fee percentage
+     * @return The ID of the minted token
      */
     function _mintTaex(
         address to,
         uint8 _primaryArtistFee,
         uint8 _secondaryArtistFee,
         uint8 _secondaryTaexFee
-    ) internal validFees(_primaryArtistFee, _secondaryArtistFee, _secondaryTaexFee) returns (uint256) {
-        _lastTokenId += 1;
+    ) internal returns (uint256) {
+        _lastTokenId++;
         uint256 tokenId = _lastTokenId;
 
         tokenData[tokenId] = TokenData({
@@ -172,9 +162,9 @@ contract TaexNFT is ERC721, Ownable2Step, ReentrancyGuard {
     }
 
     /**
-     * @notice Mints an NFT to the specified address
-     * @param to The address to receive the minted NFT
-     * @return The ID of the newly minted token
+     * @dev Public function to mint NFTs by the contract owner.
+     * @param to The address to mint the token to
+     * @return The ID of the minted token
      */
     function mint(
         address to
@@ -189,12 +179,12 @@ contract TaexNFT is ERC721, Ownable2Step, ReentrancyGuard {
     }
 
     /**
-     * @notice Mints an NFT with custom fee values
-     * @param to The address to receive the minted NFT
-     * @param _primaryArtistFee The artist fee percentage for the primary sale
-     * @param _secondaryArtistFee The artist fee percentage for the secondary sale
-     * @param _secondaryTaexFee The Taex fee percentage for the secondary sale
-     * @return The ID of the newly minted token
+     * @dev Allows minting with custom fee values.
+     * @param to The address to mint the token to
+     * @param _primaryArtistFee Primary artist fee percentage
+     * @param _secondaryArtistFee Secondary artist fee percentage
+     * @param _secondaryTaexFee Secondary Taex fee percentage
+     * @return The ID of the minted token
      */
     function mintWithSpecifiedFee(
         address to,
@@ -205,7 +195,6 @@ contract TaexNFT is ERC721, Ownable2Step, ReentrancyGuard {
         external
         isValidFeePercentage(_primaryArtistFee)
         isValidFeePercentage(_secondaryArtistFee + _secondaryTaexFee)
-        validFees(_primaryArtistFee, _secondaryArtistFee, _secondaryTaexFee)
         onlyOwner
         nonReentrant
         isNotZeroAddress(to)
@@ -221,8 +210,8 @@ contract TaexNFT is ERC721, Ownable2Step, ReentrancyGuard {
     }
 
     /**
-     * @notice Sets a new base URI for the NFT metadata
-     * @param newBaseUri The new base URI to set
+     * @dev External function to set new Base URI only by admin
+     * @param newBaseUri New base URI for token metadata
      */
     function setBaseURI(string calldata newBaseUri) external onlyOwner {
         internalBaseURI = newBaseUri;
@@ -230,18 +219,18 @@ contract TaexNFT is ERC721, Ownable2Step, ReentrancyGuard {
     }
 
     /**
-     * @notice Sets the default data for future tokens
-     * @param _price The default price for future tokens
-     * @param _primaryArtistFee The artist fee percentage for the primary sale
-     * @param _secondaryArtistFee The artist fee percentage for the secondary sale
-     * @param _secondaryTaexFee The Taex fee percentage for the secondary sale
+     * @dev External function to set default token data only by admin
+     * @param _price New primary price
+     * @param _primaryArtistFee New primary artist fee
+     * @param _secondaryArtistFee New secondary artist fee
+     * @param _secondaryTaexFee New secondary Taex fee
      */
     function setDefaultData(
         uint256 _price,
         uint8 _primaryArtistFee,
         uint8 _secondaryArtistFee,
         uint8 _secondaryTaexFee
-    ) external isNotZero(_price) validFees(_primaryArtistFee, _secondaryArtistFee, _secondaryTaexFee) onlyOwner {
+    ) external isNotZero(_price) onlyOwner {
         tokenData[0].price = _price;
         tokenData[0].primaryArtistFee = _primaryArtistFee;
         tokenData[0].secondaryArtistFee = _secondaryArtistFee;
@@ -255,8 +244,8 @@ contract TaexNFT is ERC721, Ownable2Step, ReentrancyGuard {
     }
 
     /**
-     * @notice Returns the base URI for the NFT metadata
-     * @return The base URI as a string
+     * @dev See {ERC721-tokenURI}.
+     * @return The base URI for the token
      */
     function _baseURI() internal view override returns (string memory) {
         return internalBaseURI;
